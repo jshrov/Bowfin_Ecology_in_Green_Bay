@@ -1,0 +1,974 @@
+---
+title: "Bowfin figures"
+author: "Jeremiah Shrovnal"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: pdf_document
+toc: TRUE
+---
+
+# Length histogram
+```{r length histogram}
+library(ggplot2)
+
+lengthhist <- read.csv("bowfin_lengths.csv")
+bowfincount <- nrow(lengthhist)
+
+ggplot(lengthhist, aes(x=Length, fill=Sex, color=Sex)) +
+    geom_histogram(binwidth=1, alpha=0.5, position="stack",
+                   breaks=seq(50, 800, 50)) +
+    theme_classic() +
+    scale_fill_manual(values = c("grey10", "grey60", "grey90"), 
+                      labels = c("Female", "Male", "Unknown"), name = "Sex") +
+    scale_color_manual(values = c("Black", "Black", "Black")) +
+    scale_x_continuous(breaks=seq(50, 800, 50)) +
+    scale_y_continuous(breaks=seq(0, 75, 10)) +
+    labs(x = "Total Length (mm)", y = "Number of bowfin captured") +
+    theme(axis.text.y = element_text(size = 18), legend.title.align = 0.5,
+          axis.text.x = element_text(angle = 270, hjust = 0, size = 18), 
+          axis.title.x = element_text(size = 20, margin = margin(15, 1, 1, 1)), 
+          axis.title.y = element_text(size = 20, margin = margin(1, 15, 1, 1)), 
+          legend.text = element_text(size=16), legend.position = c(.1, .97), 
+          legend.title = element_text(size=18), legend.justification = c("left", "top"),
+          legend.direction = "horizontal")
+```
+
+# Diet Plot
+
+```{r}
+sizediet <- read.csv("bowfindietsize.csv")
+
+#Colorblind friendly palette
+cbbPalette <- c("#009E73", "#F0E442", "#000000",  "#0072B2", 
+                "#D55E00", "#CC79A7", "#E69F00", "#56B4E9")
+
+ggplot(sizediet, aes(fill=Food, y=Diet, x=Size)) + 
+  		geom_bar( stat="identity") + 
+  labs(title="Diet Proportion by Size", y = "Diet Source by count (%)", 
+       x = "Size Class (mm)") + 
+  scale_fill_manual(values=cbbPalette) +
+  theme_classic() +
+		theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Model Output
+
+```{r}
+library(gridExtra)
+library(lemon)
+
+plotdata <- read.csv("collin_SASplot2.csv")
+plotdata$Year <- as.factor(plotdata$Year)
+	
+(FirstPlot <- ggplot(plotdata, aes(x = RelativeJulianDay, y = TotalCatch)) +
+    geom_point()+
+    theme_classic() +
+    xlim(0,45) + #ylim(0,30) +
+    geom_line(data = plotdata, aes(x = RelativeJulianDay, y = Mu)) +
+    geom_ribbon(data = plotdata, aes(ymin = Lower, ymax = Upper), alpha=0.3) +
+	labs(y = "Total in and outflow count",
+         x = "Relative Julian Day") +
+    theme(panel.border=element_blank(), axis.line=element_line()) +
+	facet_rep_wrap(~ Year, ncol = 1, scales = "free_y",repeat.tick.labels = 'left'))
+	
+(SecondPlot <- ggplot(plotdata, aes(x = RelativeJulianDay)) +
+	geom_line(data = plotdata, aes(y = AvgTemp, color = "Temp")) +
+	scale_colour_manual(values = "blue") +
+    theme_classic() +
+    xlim(0,45) + #ylim(-12,22) +
+	labs(y = "Average Water Temp (°C)",
+         x = "Relative Julian Day",
+         colour = "") +
+	theme(legend.position = "none") +
+	facet_wrap(~ Year, ncol = 1,
+	           scales = "free_y"))
+	
+grid.arrange(FirstPlot, SecondPlot, nrow = 1, widths = c(1,1))
+```
+
+# Migration
+
+```{r migration}
+
+Malchow <- read.csv("BONMalchow.csv")
+
+Malchow$Year <- as.factor(Malchow$Year)
+
+ggplot(Malchow, aes(x = RelativeJulianDay)) +
+    geom_bar(data = Malchow, stat = "identity", position = "dodge", 
+             aes(y = CatchCount, fill = Catch)) + 
+    geom_line(data = Malchow, aes(y = AvgTemp), color = "black") +
+    scale_y_continuous(limits = c(0,20), sec.axis = sec_axis(~ . , name = "Average Temperature (C)")) +
+  scale_x_continuous(limits=c(0,40)) +
+  xlim(0,40) + ylim(0,30) +
+    scale_fill_manual(values = c("blue", "red")) +
+  theme_classic() +
+    labs(y = "Catch Count",
+         x = "Relative Julian Day",
+         colour = "")  +
+	theme(legend.position = "right") +
+	facet_grid(Year ~ ., scales = "fixed")
+```
+
+# Weight Length
+```{r}
+bonwl <- read.csv("BON_wl.csv")
+
+wlreg <- lm(log10(Weight) ~ log10(Length), data = bonwl)
+
+library(car)
+Anova(wlreg)
+
+summary(wlreg)
+
+confint(wlreg)
+
+plot(log10(bonwl$Weight) ~ log10(bonwl$Length))
+abline(lm(log10(bonwl$Weight) ~ log10(bonwl$Length)))
+
+plot(wlreg)
+
+# Random around 0
+plot(wlreg$residuals~log10(bonwl$Length))
+
+# Central tendency 
+hist(residuals(wlreg), col = "darkgray")
+plot(resid(wlreg))
+
+# Observed vs expected
+qqnorm(wlreg$residuals)
+qqline(wlreg$residuals)
+
+# Constant variability
+plot(wlreg$residuals~wlreg$fitted)
+plot(abs(wlreg$residuals)~wlreg$fitted)
+```
+
+
+# Growth
+
+```{r growth rate}
+library(FSA)       
+library(MASS)      
+library(nlstools)   
+library(minpack.lm) 
+library(cvTools)   
+library(AICcmodavg) 
+library(nlme)       
+library(lattice)    
+library(msm)  
+
+BON <- read.csv("bowfinbc.csv")
+
+
+gomplog <- function(T,logLinf,tstar=NULL,gstar=NULL) {
+  if (length(logLinf)==3) {
+    gstar <- logLinf[[3]]
+    tstar <- logLinf[[2]]
+    logLinf <- logLinf[[1]]
+  }
+  exp(logLinf)*exp(-exp(-gstar*(T-tstar)))
+}
+
+lgstclog <- function(T,logLinf,tstar=NULL,gninf=NULL) {
+  if (length(logLinf)==3) {
+    gninf <- logLinf[[3]]
+    tstar <- logLinf[[2]]
+    logLinf <- logLinf[[1]]
+  }
+  exp(logLinf)/(1+exp(-gninf*(T-tstar)))
+}
+
+fitG.01 <- nlme(BC.Len~gomplog(BC.Age,logLinf,tstar,gstar),data=BON,
+                fixed=list(logLinf~1,tstar~1,gstar~1),
+                random=logLinf+tstar+gstar~1|ID,
+                start=list(fixed=c(logLinf=log(600),tstar=2,gstar=0.5)))
+
+fitL.01 <- nlme(BC.Len~lgstclog(BC.Age,logLinf,tstar,gninf),data=BON,
+                fixed=list(logLinf~1,tstar~1,gninf~1),
+                random=logLinf+tstar+gninf~1|ID,
+                start=list(fixed=c(logLinf=log(600),tstar=2,gninf=0.8)))
+
+fitG.01p <- nlme(BC.Len~gomplog(BC.Age,logLinf,tstar,gstar),data=BON,
+                 fixed=list(logLinf~1,tstar~1,gstar~1),
+                 random=logLinf+tstar+gstar~1|ID,
+                 start=list(fixed=c(logLinf=log(600),tstar=2,gstar=0.5)),
+                 weights=varPower(form=~BC.Age))
+
+aictab(list(fitG.01,fitL.01,
+            fitG.01p),
+       c("Gompertz","logistic",
+         "Gompertz hetero."))
+				 
+library(plyr)
+library(dplyr)
+
+BONmatchvar <- c("ID", "Site", "Sex")
+BONmatch <- BON[BONmatchvar]
+
+coefs <- data.frame(gstar = coef(fitG.01p)[,3], tstar = coef(fitG.01p)[,2],
+                    logLinf = coef(fitG.01p)[,1], fish = rownames(coef(fitG.01p)))
+coefsnew <- inner_join(x = coefs,y = BONmatch, by = c("fish" = unique("ID")))
+coefsnew <- unique(coefsnew)
+
+coefsmalefit <- filterD(coefsnew, Sex == "M")
+coefsfemalefit <- filterD(coefsnew, Sex == "F")
+
+coefsmale <- data.frame(gstar = coefsmalefit["gstar"], tstar = coefsmalefit["tstar"], 
+                        logLinf = coefsmalefit["logLinf"])
+coefsfemale <- data.frame(gstar = coefsfemalefit["gstar"], tstar = coefsfemalefit["tstar"], 
+                          logLinf = coefsfemalefit["logLinf"])
+
+BONplot <- filterD(BON, Sex == "M" | Sex == "F")
+
+Male_count <- nrow(unique(coefsmalefit))
+Female_count <- nrow(unique(coefsfemalefit))
+
+Male_label <- paste("Male (N = ", Male_count,")",sep = "")
+Female_label <- paste("Female (N = ", Female_count,")",sep = "")
+
+ggplot(BONplot, aes(x = BC.Age, y = BC.Len)) +
+  scale_x_continuous(limits=c(0,20), breaks = seq(0, 20, 2), "Back-Calculated Age") +
+  scale_y_continuous(limits=c(0,800), breaks = seq(0, 800, 100),
+                     "Back-Calculated Length at Age (mm)") +
+  stat_function(fun=function(x){exp(mean(coefsmale[,"logLinf"]))*
+      exp(-exp(-mean(coefsmale[,"gstar"])*
+                 (x-mean(coefsmale[,"tstar"]))))}, 
+      color="blue", linetype = "longdash", size = 1.5) +
+  stat_function(fun=function(x){exp(mean(coefsfemale[,"logLinf"]))*
+      exp(-exp(-mean(coefsfemale[,"gstar"])*
+                 (x-mean(coefsfemale[,"tstar"]))))}, 
+      color="red", linetype = "longdash", size = 1.5) +
+  geom_point(aes(color = Sex, shape = Sex), alpha = .75, size = 4) +
+  scale_color_manual(values = c("Red", "Blue"), labels = c(Female_label, Male_label), 
+                     name = "Sex") +
+  scale_shape_manual(values = c(1,4), labels = c(Female_label, Male_label),
+                     name = "Sex") +
+  theme_classic() +
+  theme(axis.text.y = element_text(size = 18), legend.title.align = 0.5,
+          axis.text.x = element_text(hjust = 0, size = 18), 
+          axis.title.x = element_text(size = 20, margin = margin(15, 1, 1, 1)), 
+        axis.title.y = element_text(size = 20, margin = margin(1, 15, 1, 1)), 
+        legend.text = element_text(size=16), legend.position = c(.95, .1), 
+        legend.title = element_text(size=18), legend.justification = c("right", "bottom"),
+          legend.direction = "vertical")
+```
+
+# Diet Metrics
+```{r diet metrics}
+library(knitr)
+library(matrixStats)
+diet_full <- read.csv("Bowfin_Diet_Data01.csv")
+
+#Create a total for each fish
+diet_full$Total_Diet_N <- rowSums(diet_full[,5:10])
+
+#Remove empties
+diet <- diet_full[which(diet_full$Total_Diet_N > 0),]
+
+diet$Fish_percentN <- diet$Fish / diet$Total_Diet_N
+diet$Insecta_percentN <- diet$Insecta / diet$Total_Diet_N
+diet$Amphipoda_percentN <- diet$Amphipod / diet$Total_Diet_N
+diet$Decapoda_percentN <- diet$Decapoda / diet$Total_Diet_N
+diet$Isopoda_percentN <- diet$Isopoda / diet$Total_Diet_N
+diet$Other_percentN <- diet$Other / diet$Total_Diet_N
+
+diet
+
+#Divide by adult/YOY
+Adult_diets <- diet[which(diet$Length >= 200),]
+YOY_diets <- diet[which(diet$Length < 200),]
+
+PENS_Adult_diets <- Adult_diets[which(Adult_diets$Site == "PENS"),]
+Other_Adult_diets <- Adult_diets[which(Adult_diets$Site != "PENS"),]
+
+Adult_count <- nrow(Adult_diets)
+Adult_Fishcount <- nrow(subset(Adult_diets, Fish > 0))
+Adult_Insectacount <- nrow(subset(Adult_diets, Insecta > 0))
+Adult_Amphipodacount <- nrow(subset(Adult_diets, Amphipoda > 0))
+Adult_Decapodacount <- nrow(subset(Adult_diets, Decapoda > 0))
+Adult_Isopodacount <- nrow(subset(Adult_diets, Isopoda > 0))
+Adult_Othercount <- nrow(subset(Adult_diets, Other > 0))
+
+PENS_Adult_count <- nrow(PENS_Adult_diets)
+PENS_Adult_Fishcount <- nrow(subset(PENS_Adult_diets, Fish > 0))
+PENS_Adult_Insectacount <- nrow(subset(PENS_Adult_diets, Insecta > 0))
+PENS_Adult_Amphipodacount <- nrow(subset(PENS_Adult_diets, Amphipoda > 0))
+PENS_Adult_Decapodacount <- nrow(subset(PENS_Adult_diets, Decapoda > 0))
+PENS_Adult_Isopodacount <- nrow(subset(PENS_Adult_diets, Isopoda > 0))
+PENS_Adult_Othercount <- nrow(subset(PENS_Adult_diets, Other > 0))
+
+Other_Adult_count <- nrow(Other_Adult_diets)
+Other_Adult_Fishcount <- nrow(subset(Other_Adult_diets, Fish > 0))
+Other_Adult_Insectacount <- nrow(subset(Other_Adult_diets, Insecta > 0))
+Other_Adult_Amphipodacount <- nrow(subset(Other_Adult_diets, Amphipoda > 0))
+Other_Adult_Decapodacount <- nrow(subset(Other_Adult_diets, Decapoda > 0))
+Other_Adult_Isopodacount <- nrow(subset(Other_Adult_diets, Isopoda > 0))
+Other_Adult_Othercount <- nrow(subset(Other_Adult_diets, Other > 0))
+
+YOY_count <- nrow(YOY_diets)
+YOY_Fishcount <- nrow(subset(YOY_diets, Fish > 0))
+YOY_Insectacount <- nrow(subset(YOY_diets, Insecta > 0))
+YOY_Amphipodacount <- nrow(subset(YOY_diets, Amphipoda > 0))
+YOY_Decapodacount <- nrow(subset(YOY_diets, Decapoda > 0))
+YOY_Isopodacount <- nrow(subset(YOY_diets, Isopoda > 0))
+YOY_Othercount <- nrow(subset(YOY_diets, Other > 0))
+
+Adult_dietcount <- rbind(Adult_Fishcount, Adult_Insectacount,
+                         Adult_Amphipodacount, Adult_Decapodacount, 
+                         Adult_Isopodacount, Adult_Othercount)
+
+PENS_Adult_dietcount <- rbind(PENS_Adult_Fishcount, PENS_Adult_Insectacount,
+                         PENS_Adult_Amphipodacount, PENS_Adult_Decapodacount, 
+                         PENS_Adult_Isopodacount, PENS_Adult_Othercount)
+
+Other_Adult_dietcount <- rbind(Other_Adult_Fishcount, Other_Adult_Insectacount,
+                         Other_Adult_Amphipodacount, Other_Adult_Decapodacount, 
+                         Other_Adult_Isopodacount, Other_Adult_Othercount)
+
+YOY_dietcount <- rbind(YOY_Fishcount, YOY_Insectacount, YOY_Amphipodacount, 
+                        YOY_Decapodacount, YOY_Isopodacount, YOY_Othercount)
+
+Adult_Oi <- (Adult_dietcount / Adult_count) * 100
+
+PENS_Adult_Oi <- (PENS_Adult_dietcount / PENS_Adult_count) * 100
+
+Other_Adult_Oi <- (Other_Adult_dietcount / Other_Adult_count) * 100
+
+YOY_Oi <- (YOY_dietcount / YOY_count) * 100
+
+total_adult_count_by_item <- colSums(Adult_diets[,5:10])
+total_adult_cumulative <- sum(Adult_diets[,11])
+total_pens_adult_count_by_item <- colSums(PENS_Adult_diets[,5:10])
+total_pens_adult_cumulative <- sum(PENS_Adult_diets[,11])
+total_other_adult_count_by_item <- colSums(Other_Adult_diets[,5:10])
+total_other_adult_cumulative <- sum(Other_Adult_diets[,11])
+total_YOY_count_by_item <- colSums(YOY_diets[,5:10])
+total_YOY_cumulative <- sum(YOY_diets[,11])
+
+Adult_Ni <- (total_adult_count_by_item / total_adult_cumulative) * 100
+PENS_Adult_Ni <- (total_adult_count_by_item / total_adult_cumulative) * 100
+Other_Adult_Ni <- (total_adult_count_by_item / total_adult_cumulative) * 100
+YOY_Ni <- (total_YOY_count_by_item / total_YOY_cumulative) * 100
+
+Adult_MNi <- (colMeans(Adult_diets[,12:17])) * 100
+PENS_Adult_MNi <- (colMeans(PENS_Adult_diets[,12:17])) * 100
+Other_Adult_MNi <- (colMeans(Other_Adult_diets[,12:17])) * 100
+YOY_MNi <- (colMeans(YOY_diets[,12:17])) * 100
+
+Adult_MNi_sd <- (colSds(as.matrix(Adult_diets[,12:17]))) * 100
+PENS_Adult_MNi_sd <- (colSds(as.matrix(PENS_Adult_diets[,12:17]))) * 100
+Other_Adult_MNi_sd <- (colSds(as.matrix(Other_Adult_diets[,12:17]))) * 100
+YOY_MNi_sd <- (colSds(as.matrix(YOY_diets[,12:17]))) * 100
+
+(Adult_Oi)
+(PENS_Adult_Oi)
+(Other_Adult_Oi)
+(YOY_Oi)
+
+(Adult_Ni)
+(PENS_Adult_Oi)
+(Other_Adult_Oi)
+(YOY_Ni)
+
+(Adult_MNi)
+(PENS_Adult_MNi)
+(Other_Adult_MNi)
+(YOY_MNi)
+
+(Adult_MNi_sd)
+(PENS_Adult_MNi_sd)
+(Other_Adult_MNi_sd)
+(YOY_MNi_sd)
+
+SchoenerAdultYOY <- 100 - (0.5 * sum(abs(Adult_MNi - YOY_MNi)))
+SchoenerAdultPENSvs <- 100 - (0.5 * sum(abs(PENS_Adult_MNi - Other_Adult_MNi)))
+SchoenerAdultYOY
+SchoenerAdultPENSvs
+```
+
+# PCoA
+```{r PCoA}
+library(vegan)
+
+# load bowfin prop 03
+Bowfin_prop03 <- read.csv("Bowfin_prop03.csv")
+
+pco.gc01 <- wcmdscale(vegdist(Bowfin_prop03[,-c(1:5)]), k = 42, eig = TRUE, add="lingoes") 
+
+# which prey items contribute significantly to differences
+efit_age<- envfit(pco.gc01, Bowfin_prop03[,-c(1:5)], permutations=9999, 
+                    strata=Bowfin_prop03$AgeClass)
+efit_age
+
+# length regression
+efit_len <- envfit(pco.gc01, Bowfin_prop03[,4],permutations=9999)
+efit_len
+
+## graph by stream
+
+Bowfin_prop03$Site <- as.factor(Bowfin_prop03$Site)
+Bowfin_prop03$AgeClass <- as.factor(Bowfin_prop03$AgeClass)
+
+coltreat <- c("deepskyblue4", "darkolivegreen4")
+
+
+par(mar = c(0, 0, 0, 0), oma = c(4, 4, 0.5, 0.5))
+par(tcl = -0.25)
+par(mgp = c(2, 0.6, 0)) 
+par(font.lab=2, cex.lab=1.5)
+plot(pco.gc01$points, type = "p", bg=coltreat[Bowfin_prop03$AgeClass], pch = 22, cex=0.75, asp = 1/1)
+lev <- levels(Bowfin_prop03$AgeClass)
+for (i in seq_along(lev)) {
+  ordiellipse(pco.gc01$points, draw="polygon", kind = "se", #can also plot standard errors
+              groups = Bowfin_prop03$AgeClass, alpha= 40,
+              col = coltreat[i], border=coltreat[i],
+              lwd=2, show.groups = lev[i],
+              label=FALSE)
+}
+plot(efit_len, col = "red", cex = 0.9, p.max=0.05)
+plot(efit_age, col = "black", cex = 0.9, p.max=0.05)
+mtext("Axis 2", side = 2, outer = TRUE, cex = 1.5, font =2, line = 2.2)
+mtext("Axis 1", side = 1, outer = TRUE, cex = 1.5, font =2, line = 2.2)
+legend("topleft",legend=c(levels(Bowfin_prop03$AgeClass)), title="Age Class", pch = 22,
+       pt.bg=c("deepskyblue4", "darkolivegreen4", "goldenrod3", "darkmagenta",
+               "indianred3","darkorange3", "red"),
+       pt.cex=1, cex=1, xpd=NA, bty="n")
+
+## PERMANOVA by age class
+( mod01 <- adonis(vegdist(Bowfin_prop03[,-c(1:5)], method="bray") ~ factor(AgeClass), 
+                  data = Bowfin_prop03, permutations = 999) )
+
+# meets assumption of equal variance
+dist15<-vegdist(Bowfin_prop03[,-c(1:5)])
+mod <- with(Bowfin_prop03[,-c(1:2, 4:5)], betadisper(dist15, AgeClass))
+anova(mod) 
+
+# 3: PERMANOVA by site
+
+# subset into only sites with more than 3 reps
+Bowfin_prop_site <- Bowfin_prop03 %>% 
+  filter(AgeClass=="Adult") %>% 
+  filter(Site %in% c("PENS", "PESH", "PTSA", "DEHO"))
+
+( mod02 <- adonis(vegdist(Bowfin_prop_site[,-c(1:5)], method="bray") ~ factor(Site), 
+                  data = Bowfin_prop_site, permutations = 999) )
+
+dist16<-vegdist(Bowfin_prop_site[,-c(1:5)])
+mod <- with(Bowfin_prop_site[,-c(2:5)], betadisper(dist16, Site))
+anova(mod)
+
+```
+
+# tRophic Position
+
+```{r trophic position}
+library(tRophicPosition)
+library(coda)
+library(bayestestR)
+
+pensBONiso <- read.csv("pens_BON.csv")
+
+# Adult identified in rf prediction
+pensBONiso <- pensBONiso[which(pensBONiso$ID != "penswlbon6"),]
+
+TDF_values <- TDF()
+
+BONtpList <- loadIsotopeData(pensBONiso, consumer = "Adult", b1 = "YOY",
+                                  baselineColumn = "Development", 
+                                  consumersColumn = "Development",
+                                  deltaC = TDF_values$deltaC,
+								  deltaN = TDF_values$deltaN)
+								  
+model.string <- jagsBayesianModel(model = "oneBaseline", TP = "dnorm(1, 0.1)", lambda = 0)
+								  
+BON_tp_model <- TPmodel(BONtpList, model.string = model.string,
+                                   n.adapt = 20000, n.chains = 3)
+								   
+BONposterior.samples <- posteriorTP(model = BON_tp_model, n.iter = 20000,
+                                 variable.names = c("TP", "muDeltaN"))
+
+# Check Convergence
+gelman.diag(BONposterior.samples)
+
+BONposterior.combined <- coda::mcmc(do.call(rbind, BONposterior.samples))
+
+BONposteriormode <- getPosteriorMode(BONposterior.combined)
+BONposteriormode
+
+BON_tp_map <- map_estimate(as.numeric(BONposterior.combined[,"TP"]))
+BON_dN_map <- map_estimate(as.numeric(BONposterior.combined[,"muDeltaN"]))
+
+ci_hdi <- ci(BONposterior.combined, ci = 0.95, method = "HDI")
+ci_hdi
+
+BON_tp_graph_info <- estimate_density(BONposterior.combined, extend = TRUE)
+
+BON_tp_graph <- ggplot(BON_tp_graph_info[which(BON_tp_graph_info$Parameter == "TP"),], 
+                       aes(x = x, y = y)) +
+				geom_area(fill = "gray") +
+				theme_classic() +
+				geom_vline(xintercept = ci_hdi$CI_low[1], color = "black",
+				           linetype = "longdash", size = 0.5) +
+				geom_vline(xintercept = ci_hdi$CI_high[1], color = "black",
+				           linetype = "longdash", size = 0.5) +
+				geom_vline(xintercept = BONposteriormode[1], color = "black",
+				           linetype = "dotdash", size = 0.5) +
+				geom_vline(xintercept = BON_tp_map[1], color = "black",
+				           linetype = "dotted", size = 0.5) +
+				labs(title = "Trophic Position Distribution", x = "TP", y = "Density") +
+				theme(plot.title = element_text(hjust = 0.5))
+				
+BON_tp_graph
+
+BON_dn_graph <- ggplot(BON_tp_graph_info[which(BON_tp_graph_info$Parameter == "muDeltaN"),],
+                       aes(x = x, y = y)) +
+				geom_area(fill = "gray") +
+				theme_classic() +
+				geom_vline(xintercept = ci_hdi$CI_low[2], color = "black",
+				           linetype = "longdash", size = 0.5) +
+				geom_vline(xintercept = ci_hdi$CI_high[2], color = "black",
+				           linetype = "longdash", size = 0.5) +
+				geom_vline(xintercept = BONposteriormode[2], color = "black",
+				           linetype = "dotdash", size = 0.5) +
+				geom_vline(xintercept = BON_dN_map[1], color = "black",
+				           linetype = "dotted", size = 0.5) +
+				labs(title = expression(Delta*" N Distribution"),
+				     x = expression("Mean "*Delta*" N Distribution"),
+				     y = "Density") +
+				theme(plot.title = element_text(hjust = 0.5))
+				
+BON_dn_graph
+
+Length_d13C_relationship <- lm(d13C ~ Length, data = pensBONiso)
+
+summary(Length_d13C_relationship)
+
+summary(Length_d13C_relationship)$r.squared
+
+penBON_dC_Length <- ggplot(pensBONiso, aes(x = Length, y = d13C)) +
+					geom_point() +
+					geom_smooth(method = "lm", se = TRUE) +
+					labs(title = expression("Pensaukee Bowfin "*delta*"13C-Length Regression"),
+					     y = expression(delta*"13C")) +
+					theme_classic() +
+					theme(plot.title = element_text(hjust = 0.5))
+
+penBON_dC_Length
+
+Length_d15N_relationship <- lm(d15N ~ Length, data = pensBONiso)
+
+summary(Length_d15N_relationship)
+
+summary(Length_d15N_relationship)$r.squared
+
+penBON_dN_Length <- ggplot(pensBONiso, aes(x = Length, y = d15N)) +
+					geom_point() +
+					geom_smooth(method = "lm", se = TRUE) +
+					labs(title = expression("Pensaukee Bowfin "*delta*"15N-Length Regression"),
+					     y = expression(delta*"15N")) +
+					theme_classic() +
+					theme(plot.title = element_text(hjust = 0.5))
+
+penBON_dN_Length
+```
+
+# nicheROVER
+
+```{r nicherover}
+library(nicheROVER)
+
+bowfin <- pensBONiso[,c("Development", "d13C", "d15N", "Spp")]
+
+aggregate(bowfin[2:3], bowfin[1], mean)
+
+clrs <- c("red", "blue")
+
+# generate parameter draws from the 'default' posteriors of each fish
+set.seed(152)
+
+nsamples <- 10000
+system.time({
+    bon.par <- tapply(1:nrow(bowfin), bowfin$Development, function(ii) niw.post(nsamples = nsamples, 
+        X = bowfin[ii, 2:3]))
+})
+
+# 2-d projections of 10 niche regions
+clrs <- c("deepskyblue4", "darkolivegreen4")  # colors for each species
+nsamples <- 10
+set.seed(152)
+bon.par <- tapply(1:nrow(bowfin), bowfin$Development, function(ii) niw.post(nsamples = nsamples, 
+    X = bowfin[ii, 2:3]))
+
+# format data for plotting function
+bon.data <- tapply(1:nrow(bowfin), bowfin$Development, function(ii) X = bowfin[ii, 2:3])
+
+limitmatrix <- matrix(c(round_any(min(bowfin$d13C), 5, f = floor),  
+				round_any(max(bowfin$d13C), 5, f = ceiling), 
+				round_any(min(bowfin$d15N), 5, f = floor),  
+				round_any(max(bowfin$d15N), 5, f = ceiling)), 
+				nrow = 2, ncol = 2)
+		
+niche.plot <- function(niche.par, niche.data, alpha = .95,
+                       species.names, iso.names, lims,
+                       col, ndens = 512, pfrac = 0, xlab) {
+  niso <- ncol(niche.par[[1]]$mu)
+  nspec <- length(niche.par)
+  npts <- 100 # number of points for each ellipse
+  nell <- sapply(niche.par, function(x) nrow(x$mu)) # number of ellipses per species
+  if(missing(species.names)) species.names <- names(niche.par)
+  if(missing(iso.names)) iso.names <- colnames(niche.par[[1]]$mu)
+  # create all the ellipses to get the plot limits right.
+  ell <- vector("list", nspec)
+  names(ell) <- names(species.names)
+  D <- combn(niso, 2)
+  for(ii in 1:nspec) {
+    ell.tmp <- array(NA, c(nell[ii], ncol(D), npts+1, 2))
+    for(jj in 1:nell[ii]) {
+      for(kk in 1:ncol(D)) {
+        ell.coord <- ellipse(niche.par[[ii]]$mu[jj, D[,kk]],
+                             V = niche.par[[ii]]$Sigma[D[,kk], D[,kk], jj],
+                             alpha = alpha, n = npts)
+        ell.tmp[jj,kk,,] <- ell.coord
+      }
+    }
+    ell[[ii]] <- ell.tmp
+  }
+  # plot limits.
+  if(missing(lims)) {
+    # data
+    lims <- array(sapply(niche.data, function(x) apply(x, 2, range)),
+                  dim = c(2, niso, nspec))
+    lims <- apply(lims, 2, range)
+    # ellipse
+    DD <- t(sapply(1:niso, function(ii) which(D == ii, arr.ind = TRUE)[1,]))
+    elims <- array(sapply(ell, function(x) {
+      tmp <- apply(x, c(4,2), range)
+      rbind(as.matrix(tmp[1,,])[DD], as.matrix(tmp[2,,])[DD])
+    }), dim = c(2, niso, nspec))
+    elims <- apply(elims, 2, range)
+    lims <- apply(rbind(lims, elims), 2, range)
+  }
+  # plots
+  opar <- par(mfcol = c(niso,niso), mar = rep(.5, 4), oma = rep(4,4))
+  for(ci in 1:niso) {
+    for(ri in 1:niso) {
+      # initialize plot
+      plot.new()
+      plot.window(lims[,ci], lims[,ri])
+      if (ci == ri) {
+        # diagonals: density plots
+        xdens <- matrix(NA, ndens, nspec)
+        ydens <- xdens
+        for(ii in 1:nspec) {
+          den <- density(niche.data[[ii]][,ci], n = ndens)
+          xdens[,ii] <- den$x
+          ydens[,ii] <- den$y
+        }
+        for(ii in 1:nspec) {
+          ly <- par("usr")[1:2]
+          ly[2] <- ly[1] + pfrac*(ly[2]-ly[1])
+          ly[3] <- (ly[2]-ly[1])/nspec
+          segments(x0 = niche.data[[ii]][,ci],
+                   y0 = ly[1]+(ii-1)*ly[3], y1 = ly[1]+ii*ly[3], col = col[ii])
+          ly <- ly[2] + ydens[,ii]/max(ydens)*(lims[2,ci]-ly[2])
+          lines(xdens[,ii], ly, col = col[ii])
+        }
+      }
+      if (ri > ci) {
+        # lower triangle: point plots
+        for(ii in 1:nspec) {
+          points(niche.data[[ii]][,c(ci,ri)], col = col[ii], pch = 16)
+        }
+      }
+      if (ri < ci) {
+        # upper triangle: ellipses
+        for(ii in 1:nspec) {
+          for(jj in 1:nell[ii]) {
+            lines(ell[[ii]][jj,which(D[1,] == ri & D[2,] == ci),,2:1], col = col[ii])
+          }
+        }
+      }
+      box()
+      if(ci == niso) axis(side = 4) else axis(side = 4, labels = FALSE)
+      if(ri == niso) axis(side = 1) else axis(side = 1, labels = FALSE)
+      if(ri == 1) mtext(text = iso.names[ci], side = 3, line = 1)
+      if(ci == 1) mtext(text = iso.names[ri], side = 2, line = 1)
+    }
+  }
+  if(!missing(xlab)) {
+    mtext(text = xlab, side = 1, outer = TRUE, line = 2.2, cex = .9)
+  }
+  legend(x = "topright", legend = species.names, fill = col, bty = "n", cex = 1.25)
+  par(opar) # reset par
+}		
+
+niche.plot(niche.par = bon.par, niche.data = bon.data, pfrac = 0.05, iso.names = expression(delta^{
+    15
+} * N, delta^{
+    13
+} * C), col = clrs, xlab = expression("Isotope Ratio (per mil)"), lims = limitmatrix)
+
+# niche overlap plots for 95% niche region sizes
+nsamples <- 10000
+bon.par <- tapply(1:nrow(bowfin), bowfin$Development, function(ii) niw.post(nsamples = nsamples, 
+    X = bowfin[ii, 2:3]))
+
+# Drop package using same internal function name
+#detach("package:bayestestR", unload=TRUE)
+
+# Overlap calculation.  use nsamples = nprob = 10000 (1e4) for higher
+# accuracy.  the variable over.stat can be supplied directly to the
+# overlap.plot function
+
+over.stat <- overlap(bon.par, nreps = nsamples, nprob = 10000, alpha = 0.95)
+
+# The mean overlap metrics calculated across iterations for both niche
+# region sizes (alpha = .95 and alpha = .99) can be calculated and displayed
+# in an array.
+over.mean <- apply(over.stat, c(1:2), mean) * 100
+round(over.mean, 2)
+
+over.median <- apply(over.stat, c(1:2), median) * 100
+round(over.median, 2)
+
+over.cred <- apply(over.stat * 100, c(1:2), quantile, prob = c(0.025, 0.975), 
+    na.rm = TRUE)
+round(over.cred[ , , ])  # display alpha = .95 niche region
+
+overlap.plot(over.stat, col = clrs, mean.cred.col = "turquoise", equal.axis = TRUE,
+             xlab = "Overlap Probability (%) -- Niche Region Size: 95%")
+			 
+nsamples <- 1000
+bon.par <- tapply(1:nrow(bowfin), bowfin$Development,
+                  function(ii) niw.post(nsamples = nsamples, X = bowfin[ii,2:3]))
+
+niche.size <- function(Sigma, alpha = .95) {
+  Sigma <- as.matrix(Sigma)
+  n <- nrow(Sigma)
+  sz <- as.numeric(determinant(Sigma, logarithm = TRUE)$modulus)
+  sz <- .5 * (sz + n * (log(pi) + log(qchisq(alpha, df = n)))) - lgamma(.5*n+1)
+  exp(sz)
+}
+
+# posterior distribution of niche size by species
+bon.size <- sapply(bon.par, function(spec) {
+  apply(spec$Sigma, 3, niche.size, alpha = .95)
+})
+
+# point estimate and standard error
+nichesize_table <- rbind(est = colMeans(bon.size),
+						 se = apply(bon.size, 2, sd))
+
+nichesize_table
+
+BonAdultNicheSize <- data.frame(bon.size[,"Adult"])
+BonAdultNicheSize <- setNames(BonAdultNicheSize, "NicheSize")
+BonAdultNicheSize$Age <- "Adult"
+
+BonYOYNicheSize <- data.frame(bon.size[,"YOY"])
+BonYOYNicheSize <- setNames(BonYOYNicheSize, "NicheSize")
+BonYOYNicheSize$Age <- "YOY"
+
+BonNicheSize <- rbind(BonYOYNicheSize, BonAdultNicheSize)
+
+BonAdultNicheSize <- BonYOYNicheSize <- NULL
+						 
+nichesize_plot <- ggplot(BonNicheSize, aes(x = Age, y = NicheSize, fill = Age)) + 
+					geom_boxplot() + 
+					scale_fill_manual(values = c("deepskyblue4", "darkolivegreen4")) +
+					ylim(0, round_any(max(BonNicheSize$NicheSize), 25, f = ceiling)) +
+					labs(title = "Pensaukee Bowfin Niche Size", x = "Developmental stage",
+					     y = "Niche Size") +
+					theme_classic() +
+					theme(plot.title = element_text(hjust = 0.5), legend.position="none")
+
+nichesize_plot
+
+```
+
+# RF
+```{r rf output}
+BONmicrochem <- read.csv("AllBONmicrochem.csv")
+
+BONmicrochem$Percent_Index <- 1
+
+for(i in 1:length(unique(BONmicrochem$Fish_ID)))
+{
+    maxforBONi <- max(BONmicrochem[which(BONmicrochem$Fish_ID ==
+                                           unique(BONmicrochem$Fish_ID)[i]),]$Relative_Index)
+    
+	BONmicrochem[which(BONmicrochem$Fish_ID ==
+	                     unique(BONmicrochem$Fish_ID)[i]),]$Percent_Index <-
+	  BONmicrochem[which(BONmicrochem$Fish_ID ==
+	                       unique(BONmicrochem$Fish_ID)[i]),]$Relative_Index / maxforBONi
+}
+
+## Time series analysis
+# Separate signature columns
+BON_Mg_col <- c("Fish_ID", "Year", "Site", "Relative_Index", "Mg25_v_Ca43", "Percent_Index")
+BON_Mn_col <- c("Fish_ID", "Year", "Site", "Relative_Index", "Mn55_v_Ca43", "Percent_Index")
+BON_Cu_col <- c("Fish_ID", "Year", "Site", "Relative_Index", "Cu65_v_Ca43", "Percent_Index")
+BON_Zn_col <- c("Fish_ID", "Year", "Site", "Relative_Index", "Zn66_v_Ca43", "Percent_Index")
+BON_Sr_col <- c("Fish_ID", "Year", "Site", "Relative_Index", "Sr88_v_Ca43", "Percent_Index")
+BON_Ba_col <- c("Fish_ID", "Year", "Site", "Relative_Index", "Ba137_v_Ca43", "Percent_Index")
+BON_Pb_col <- c("Fish_ID", "Year", "Site", "Relative_Index", "Pb208_v_Ca43", "Percent_Index")
+
+# Subset Data
+BON_Mg <- BONmicrochem[BON_Mg_col]
+BON_Mn <- BONmicrochem[BON_Mn_col]
+BON_Cu <- BONmicrochem[BON_Cu_col]
+BON_Zn <- BONmicrochem[BON_Zn_col]
+BON_Sr <- BONmicrochem[BON_Sr_col]
+BON_Ba <- BONmicrochem[BON_Ba_col]
+BON_Pb <- BONmicrochem[BON_Pb_col]
+
+# Rename columns 
+names(BON_Mg) <- c("Fish_ID", "Year", "Site", "Relative_Index", "Reading", "Percent_Index")
+names(BON_Mn) <- c("Fish_ID", "Year", "Site", "Relative_Index", "Reading", "Percent_Index")
+names(BON_Cu) <- c("Fish_ID", "Year", "Site", "Relative_Index", "Reading", "Percent_Index")
+names(BON_Zn) <- c("Fish_ID", "Year", "Site", "Relative_Index", "Reading", "Percent_Index")
+names(BON_Sr) <- c("Fish_ID", "Year", "Site", "Relative_Index", "Reading", "Percent_Index")
+names(BON_Ba) <- c("Fish_ID", "Year", "Site", "Relative_Index", "Reading", "Percent_Index")
+names(BON_Pb) <- c("Fish_ID", "Year", "Site", "Relative_Index", "Reading", "Percent_Index")
+
+# Add analysis name column
+BON_Mg$Signature <- "Mg25 v Ca43"
+BON_Mn$Signature <- "Mn55 v Ca43"
+BON_Cu$Signature <- "Cu65 v Ca43"
+BON_Zn$Signature <- "Zn66 v Ca43"
+BON_Sr$Signature <- "Sr88 v Ca43"
+BON_Ba$Signature <- "Ba137 v Ca43"
+BON_Pb$Signature <- "Pb208 v Ca43"
+
+# Combine
+BON_timesignature <- rbind(BON_Mg, BON_Mn, BON_Cu, BON_Zn, BON_Sr, BON_Ba, BON_Pb)
+
+BON_timesignature$Percent_Index <- 1
+
+for(i in 1:length(unique(BON_timesignature$Fish_ID)))
+{
+    maxforBONi <- max(BON_timesignature[which(BON_timesignature$Fish_ID ==
+                                          unique(BON_timesignature$Fish_ID)[i]),]$Relative_Index)
+    
+	BON_timesignature[which(BON_timesignature$Fish_ID ==
+	                          unique(BON_timesignature$Fish_ID)[i]),]$Percent_Index <-
+	  BON_timesignature[which(BON_timesignature$Fish_ID ==
+	                            unique(BON_timesignature$Fish_ID)[i]),]$Relative_Index / maxforBONi
+}
+
+BON_rf_col <- c("Fish_ID", "Year", "Site", "Relative_Index", 
+				"Mg25_v_Ca43", "Mn55_v_Ca43", "Cu65_v_Ca43", 
+				"Zn66_v_Ca43", "Sr88_v_Ca43", "Ba137_v_Ca43",
+				"Pb208_v_Ca43", "Percent_Index")
+				
+BON_rf_full <- BONmicrochem[BON_rf_col]
+
+BON_rf_load <- head(BON_rf_full, n = 0)
+
+for(i in 1:length(unique(BON_rf_full$Fish_ID)))
+{
+    #Take 5 entries nearest the rear to 97.5% or less relative for each fish
+	BONrf_newadd <- BON_rf_full[which(BON_rf_full$Fish_ID == unique(BON_rf_full$Fish_ID)[i]),]
+	
+	BONrf_newadd <- BONrf_newadd[which(as.numeric(BONrf_newadd$Percent_Index) <= 0.975),]
+	
+	BONrf_add <- tail(BONrf_newadd, n = 4)
+	
+	BON_rf_load <- rbind(BON_rf_load, BONrf_add)
+}
+
+library(plyr)
+
+BON_rf_analysis <- BON_rf_load[which(BON_rf_load$Site == "PENS" | BON_rf_load$Site == "PESH"),]
+
+mu <- ddply(BON_rf_analysis, c("Fish_ID", "Site"), summarise, Mg25_v_Ca43 = mean(Mg25_v_Ca43), 
+			Mn55_v_Ca43 = mean(Mn55_v_Ca43), Cu65_v_Ca43 = mean(Cu65_v_Ca43), 
+			Zn66_v_Ca43 = mean(Zn66_v_Ca43), Sr88_v_Ca43 = mean(Sr88_v_Ca43), 
+			Ba137_v_Ca43 = mean(Ba137_v_Ca43), Pb208_v_Ca43 = mean(Pb208_v_Ca43))
+
+library(randomForest)
+
+set.seed(152)
+BONrf1 <- randomForest(as.factor(Site) ~ Mg25_v_Ca43 + Mn55_v_Ca43 + 
+						Cu65_v_Ca43 + Zn66_v_Ca43 + Sr88_v_Ca43 + 
+						Ba137_v_Ca43 + Pb208_v_Ca43, data = mu, 
+						importance = TRUE, ntree = 20000, mtry = 3)
+
+print(BONrf1)
+
+varImpPlot(BONrf1)
+
+set.seed(152)
+BONrf2 <- randomForest(as.factor(Site) ~ Mg25_v_Ca43 + Mn55_v_Ca43 +
+  Cu65_v_Ca43 + Sr88_v_Ca43 +
+  Ba137_v_Ca43, data = mu, 
+						importance = TRUE, ntree = 20000, mtry = 2)	
+
+print(BONrf2)
+
+varImpPlot(BONrf2)
+
+print(varImpPlot(BONrf2))
+
+BON_predict_load <- head(BON_rf_full, n = 0)
+
+for(i in 1:length(unique(BON_rf_full$Fish_ID)))
+{
+    #Take 5 entries nearest the rear to 97.5% or less relative for each fish
+	BONpredict_newadd <- BON_rf_full[which(BON_rf_full$Fish_ID ==
+	                                         unique(BON_rf_full$Fish_ID)[i]),]
+	
+	BONpredict_newadd <- BONpredict_newadd[which(as.numeric(BONpredict_newadd$Percent_Index) 
+	                                             <= 0.975),]
+	BONpredict_newadd <- BONpredict_newadd[which(as.numeric(BONpredict_newadd$Percent_Index) 
+	                                             >= 0.875),]
+	
+	#BONpredict_add <- BONpredict_newadd
+	
+	BON_predict_load <- rbind(BON_predict_load, BONpredict_newadd)
+}
+
+BON_predict_analysis <- BON_predict_load[which(BON_predict_load$Site == "PENS" |
+                                                 BON_predict_load$Site == "PESH"),]
+
+BON_rfpredict <- predict(BONrf2, BON_predict_analysis, type = "class")
+BON_rfpredictoutput <- cbind(Prediction = BON_rfpredict, BON_predict_analysis)
+
+BON_rfpredictoutput$Success <- as.numeric(0)
+
+for(i in 1:nrow(BON_rfpredictoutput)){
+  if(BON_rfpredictoutput[i,]$Site == BON_rfpredictoutput[i,]$Prediction)
+  {
+    BON_rfpredictoutput[i,]$Success <- as.numeric(1)
+  }
+  
+}
+
+Phishvalues <- data.frame(matrix(ncol = 3, nrow = length(unique(BON_rfpredictoutput$Fish_ID))))
+colnames(Phishvalues) <- c("FishID", "Site", "PercentResidence")
+
+for(i in 1:length(unique(BON_rfpredictoutput$Fish_ID)))
+{
+  Phish_total_rows <- nrow(BON_rfpredictoutput[which(BON_rfpredictoutput$Fish_ID ==
+                                                       unique(BON_rfpredictoutput$Fish_ID)[i]),])
+    
+  PhishTotal <- sum(BON_rfpredictoutput[which(BON_rfpredictoutput$Fish_ID == 
+                                                unique(BON_rfpredictoutput$Fish_ID)[i]),]$Success)
+  
+  PhishpercentSuccess <- PhishTotal/Phish_total_rows
+  
+  Phishvalues[i,]$FishID <- unique(BON_rfpredictoutput[which(BON_rfpredictoutput$Fish_ID ==
+                                            unique(BON_rfpredictoutput$Fish_ID)[i]),]$Fish_ID)
+  Phishvalues[i,]$Site <- unique(BON_rfpredictoutput[which(BON_rfpredictoutput$Fish_ID ==
+                        unique(BON_rfpredictoutput$Fish_ID)[i]),]$Site)
+  Phishvalues[i,]$PercentResidence <- PhishpercentSuccess
+}
+
+Phishvalues
+
+# For deconsideration from isotope analysis
+Phishvalues[which(Phishvalues$Site == "PENS" & Phishvalues$PercentResidence <= .75),]
+
+# Edge signature of removed fish
+tail(BON_rfpredictoutput[which(BON_rfpredictoutput$Fish_ID == "15PENSWLBON6"),], n = 50)
+```
