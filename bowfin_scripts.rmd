@@ -7,29 +7,43 @@ toc: TRUE
 ---
 
 # Length histogram
+
 ```{r length histogram}
 library(ggplot2)
 
 lengthhist <- read.csv("bowfin_lengths.csv")
+
+# Label all ticks
+xbreaks2 <- seq(50, 795, 50)
+xlabels2 <- as.character(xbreaks2)
+
+# For only labeling every other tick
+ybreaks2 <- seq(0, 70, 10)
+ylabels2 <- as.character(ybreaks2)
+ylabels2[!(ybreaks2 %% 20 == 0)] <- ''
+
 bowfincount <- nrow(lengthhist)
 
-ggplot(lengthhist, aes(x=Length, fill=Sex, color=Sex)) +
-    geom_histogram(binwidth=1, alpha=0.5, position="stack",
-                   breaks=seq(50, 800, 50)) +
-    theme_classic() +
-    scale_fill_manual(values = c("grey10", "grey60", "grey90"), 
-                      labels = c("Female", "Male", "Unknown"), name = "Sex") +
-    scale_color_manual(values = c("Black", "Black", "Black")) +
-    scale_x_continuous(breaks=seq(50, 800, 50)) +
-    scale_y_continuous(breaks=seq(0, 75, 10)) +
-    labs(x = "Total Length (mm)", y = "Number of bowfin captured") +
-    theme(axis.text.y = element_text(size = 18), legend.title.align = 0.5,
-          axis.text.x = element_text(angle = 270, hjust = 0, size = 18), 
-          axis.title.x = element_text(size = 20, margin = margin(15, 1, 1, 1)), 
-          axis.title.y = element_text(size = 20, margin = margin(1, 15, 1, 1)), 
-          legend.text = element_text(size=16), legend.position = c(.1, .97), 
-          legend.title = element_text(size=18), legend.justification = c("left", "top"),
-          legend.direction = "horizontal")
+lengthhistogram <- ggplot(lengthhist, aes(x = Length, fill = Sex, color = Sex)) +
+  geom_histogram(binwidth = 1, alpha = 0.5, position = "stack",
+                 breaks = seq(50, 795, 50)) +
+  theme_classic() +
+  scale_fill_manual(values = c("grey10", "grey60", "grey90"),
+                    labels = c("Female", "Male", "Unknown"), name = "Sex") +
+  scale_color_manual(values = c("Black", "Black", "Black")) +
+  scale_x_continuous(limits = c(50, 795), breaks = xbreaks2, labels = xlabels2, expand = expand_scale(mult = c(0, 0))) +
+  scale_y_continuous(limits = c(0,75), breaks = ybreaks2, labels = ylabels2, expand = expand_scale(mult = c(0, 0))) +
+  labs(x = "Total length (mm)", y = "Number of bowfin captured") +
+  theme(axis.text.y = element_text(size = 18), legend.title.align = 0.5,
+        axis.text.x = element_text(angle = 90, hjust = 0, size = 18),
+        axis.title.x = element_text(size = 20, margin = margin(15, 1, 1, 1)),
+        axis.title.y = element_text(size = 20, margin = margin(1, 15, 1, 1)),
+        legend.text = element_text(size = 16), legend.position = c(.1, .97),
+        legend.title = element_text(size = 18), legend.justification = c("left", "top"),
+        legend.direction = "horizontal")
+
+# Save histogram
+ggsave("lengthhistogram.tiff", plot = lengthhistogram, dpi = 600)
 ```
 
 # Diet Plot
