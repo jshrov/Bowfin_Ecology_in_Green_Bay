@@ -1,6 +1,6 @@
 ---
 title: "Bowfin figures"
-author: "Jeremiah Shrovnal"
+author: "Collin Moratz, Jeremiah Shrovnal, Mia McReynolds"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: pdf_document
 toc: TRUE
@@ -124,6 +124,7 @@ ggplot(Malchow, aes(x = RelativeJulianDay)) +
 ```
 
 # Weight Length
+
 ```{r}
 bonwl <- read.csv("BON_wl.csv")
 
