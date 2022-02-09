@@ -176,7 +176,7 @@ library(msm)
 BON <- read.csv("bowfinbc.csv")
 
 # Von Bert
-vblog <- function(T, logLinf, K = NULL, t0 = NULL) {
+vonbertlog <- function(T, logLinf, K = NULL, t0 = NULL) {
   # If passed as list
   if(length(logLinf) == 3) {
     t0 <- logLinf[[3]]
@@ -198,7 +198,7 @@ gomplog <- function(T, logLinf, tstar = NULL, gstar = NULL) {
 }
 
 # Logistic 
-lgstclog <- function(T, logLinf, tstar = NULL, gninf = NULL) {
+logisticlog <- function(T, logLinf, tstar = NULL, gninf = NULL) {
   # If passed as a list
   if(length(logLinf) == 3) {
     gninf <- logLinf[[3]]
@@ -209,7 +209,7 @@ lgstclog <- function(T, logLinf, tstar = NULL, gninf = NULL) {
 }
 
 # Richards
-richlog <-  function(T, logLinf, k = NULL, tstar = NULL, b = NULL) {
+richardslog <-  function(T, logLinf, k = NULL, tstar = NULL, b = NULL) {
   # If passed as list
   if(length(Linf) == 4) {
     b <- Linf[[4]]
@@ -220,16 +220,27 @@ richlog <-  function(T, logLinf, k = NULL, tstar = NULL, b = NULL) {
   exp(Linf) * (1 - (1 / b) * exp(-k * (T - tstar)))^b
 }
 
+fitVB.01 <- nlme(BC.Len ~ vonbertlog(BC.Age, logLinf, K, t0), data = BON,
+                fixed = list(logLinf ~ 1, K ~ 1, t0 ~ 1),
+                random = logLinf + K + t0 ~ 1 | ID,
+                start = list(fixed = c(logLinf = log(600), k = .5, t0 = 0.5)))
+
 fitG.01 <- nlme(BC.Len ~ gomplog(BC.Age, logLinf, tstar, gstar), data = BON,
                 fixed = list(logLinf ~ 1, tstar ~ 1, gstar ~ 1),
                 random = logLinf + tstar + gstar ~ 1 | ID,
                 start = list(fixed = c(logLinf = log(600), tstar = 2, gstar = 0.5)))
 
-fitL.01 <- nlme(BC.Len ~ lgstclog(BC.Age, logLinf, tstar, gninf), data = BON,
+fitL.01 <- nlme(BC.Len ~ logisticlog(BC.Age, logLinf, tstar, gninf), data = BON,
                 fixed = list(logLinf ~ 1, tstar ~ 1, gninf ~ 1),
                 random = logLinf + tstar + gninf ~ 1 | ID,
                 start = list(fixed = c(logLinf = log(600), tstar = 2, gninf = 0.8)))
 
+# Power functions
+fitVB.01 <- nlme(BC.Len ~ vonbertlog(BC.Age, logLinf, K, t0), data = BON,
+                fixed = list(logLinf ~ 1, K ~ 1, t0 ~ 1),
+                random = logLinf + K + t0 ~ 1 | ID,
+                start = list(fixed = c(logLinf = log(600), k = .5, t0 = 0.5)),
+                weights = varPower(form = ~ BC.Age))
 
 fitG.01p <- nlme(BC.Len ~ gomplog(BC.Age, logLinf, tstar, gstar), data = BON,
                  fixed = list(logLinf ~ 1, tstar ~ 1, gstar ~ 1),
@@ -237,7 +248,7 @@ fitG.01p <- nlme(BC.Len ~ gomplog(BC.Age, logLinf, tstar, gstar), data = BON,
                  start = list(fixed = c(logLinf = log(600), tstar = 2, gstar = 0.5)),
                  weights = varPower(form = ~ BC.Age))
 
-# fitL.01p <- nlme(BC.Len ~ lgstclog(BC.Age, logLinf, tstar,gninf), data = BON,
+# fitL.01p <- nlme(BC.Len ~ logisticlog(BC.Age, logLinf, tstar, gninf), data = BON,
 #                 fixed = list(logLinf ~ 1, tstar ~ 1, gninf ~ 1),
 #                 random = logLinf + tstar + gninf~1 | ID,
 #                 start = list(fixed = c(logLinf = log(600), tstar = 2, gninf = 0.8)),
