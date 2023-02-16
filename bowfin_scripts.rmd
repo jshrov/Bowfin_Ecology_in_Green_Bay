@@ -4,12 +4,16 @@ author: "Collin Moratz, Jeremiah Shrovnal, Mia McReynolds"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: pdf_document
 toc: TRUE
+editor_options: 
+  chunk_output_type: console
 ---
 
 # Length histogram
 
 ```{r length histogram}
 library(ggplot2)
+
+setwd("C:/Users/jshro/Documents/Old cpu/Sept 9")
 
 lengthhist <- read.csv("bowfin_lengths.csv")
 
@@ -172,8 +176,8 @@ library(AICcmodavg)
 library(nlme)       
 library(lattice)    
 library(msm)  
-
-BON <- read.csv("bowfinbc.csv")
+setwd("C:/Users/jshro/Documents/Old cpu/Sept 9")
+BON <- read.csv("C:/Users/jshro/Documents/Old cpu/Sept 9/bowfinbc.csv")
 
 # Von Bert
 vonbertlog <- function(T, logLinf, K = NULL, t0 = NULL) {
@@ -312,6 +316,34 @@ ggplot(BONplot, aes(x = BC.Age, y = BC.Len)) +
         legend.title = element_text(size=18), legend.justification = c("right", "bottom"),
           legend.direction = "vertical")
 ```
+
+```{r new_growth_metric}
+# Demonstrate other populations
+
+# femaleUMR
+806.8 * (1-exp(-0.227*(2 + 0.012)))
+806.8 * (1-exp(-0.227*(5 + 0.012)))
+#maleUMR 
+696.7 * (1-exp(-0.328 * (2 - 0.185)))
+696.7 * (1-exp(-0.328 * (5 - 0.185)))
+
+# Lake Lindsay Grace
+603.8 * (1-exp(-0.625 * (2 - 0.779)))
+603.8 * (1-exp(-0.625 * (5 - 0.779)))
+
+# Upper Barataria Estuary
+1131.6 * (1-exp(-0.078 * (2 - 3.523)))
+1131.6 * (1-exp(-0.078 * (5 - 3.523)))
+
+# Pool 11 UMR
+809.2 * (1-exp(-0.229 * (2 - 0.086)))
+809.2 * (1-exp(-0.229 * (5 - 0.086)))
+
+# Pool 13 UMR
+783.3 * (1-exp(-0.235 * (2 + 0.004)))
+783.3 * (1-exp(-0.235 * (5 + 0.004)))
+```
+
 
 # Diet Metrics
 ```{r diet metrics}
