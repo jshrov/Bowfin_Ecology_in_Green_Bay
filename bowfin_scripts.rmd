@@ -321,27 +321,183 @@ ggplot(BONplot, aes(x = BC.Age, y = BC.Len)) +
 # Demonstrate other populations
 
 # femaleUMR
-806.8 * (1-exp(-0.227*(2 + 0.012)))
-806.8 * (1-exp(-0.227*(5 + 0.012)))
+806.8 * (1-exp(-0.227*(3 + 0.012)))
+
 #maleUMR 
 696.7 * (1-exp(-0.328 * (2 - 0.185)))
-696.7 * (1-exp(-0.328 * (5 - 0.185)))
 
 # Lake Lindsay Grace
 603.8 * (1-exp(-0.625 * (2 - 0.779)))
-603.8 * (1-exp(-0.625 * (5 - 0.779)))
+603.8 * (1-exp(-0.625 * (3 - 0.779)))
 
-# Upper Barataria Estuary
-1131.6 * (1-exp(-0.078 * (2 - 3.523)))
-1131.6 * (1-exp(-0.078 * (5 - 3.523)))
+# Upper Barataria Estuary - needs checking
+1131.6 * (1-exp(-0.078 * (2 - 0.523)))
+1131.6 * (1-exp(-0.078 * (3 - 0.523)))
 
 # Pool 11 UMR
 809.2 * (1-exp(-0.229 * (2 - 0.086)))
-809.2 * (1-exp(-0.229 * (5 - 0.086)))
+809.2 * (1-exp(-0.229 * (3 - 0.086)))
 
 # Pool 13 UMR
 783.3 * (1-exp(-0.235 * (2 + 0.004)))
-783.3 * (1-exp(-0.235 * (5 + 0.004)))
+783.3 * (1-exp(-0.235 * (3 + 0.004)))
+
+BCgrowth <- readr::read_csv(
+              paste0(
+                here::here(), 
+                "/bowfinbc.csv"
+              )
+            )
+
+BC_length_at_age_summary <- BCgrowth |> 
+                              dplyr::rename(
+                                `BC Age` = BC.Age
+                              ) |> 
+                              dplyr::group_by(
+                                Sex,
+                                `BC Age`
+                              ) |> 
+                              dplyr::summarize(
+                                `Mean BC Length` = mean(BC.Len, na.rm = TRUE),
+                                `SD BC Length` = sd(BC.Len, na.rm = TRUE),
+                                Observations = dplyr::n(),
+                                `Total Sites` = length(unique(Site)),
+                                Sites = tibble::lst(unique(Site)),
+                                dplyr::across(`Mean BC Length`:`SD BC Length`, round)
+                              )
+
+# Length at age table
+BC_length_at_age_summary |> 
+  dplyr::filter(
+    (`BC Age` == 3 & Sex == "F") | 
+      (`BC Age` == 2 & Sex == "M")
+  ) |> 
+  dplyr::select(
+    1:2, 5, 3:4, 6, 7
+  ) |> 
+  gt::gt()
+
+BC_length_at_age_summary |> 
+  dplyr::filter(
+    Sex != "U"
+  ) |> 
+  dplyr::mutate(
+    `BC Age` = factor(`BC Age`)
+  ) |> 
+  tidyr::complete(
+    `BC Age`
+  ) |> 
+  dplyr::mutate(
+    `BC Age` = as.numeric(`BC Age`),
+    Sex = dplyr::if_else(
+      Sex == "M",
+      "Male",
+      "Female"
+    )
+  ) |> 
+  dplyr::mutate_at(
+    3:6, ~tidyr::replace_na(., 0)
+  ) |> 
+  ggplot2::ggplot(
+    ggplot2::aes(
+      x = `BC Age`,
+      y = `Mean BC Length`,
+      fill = Sex,
+      group = Sex
+    )
+  ) +
+    ggplot2::geom_col(
+      position = ggplot2::position_dodge2()
+    ) +
+    ggplot2::geom_errorbar(
+      data = BC_length_at_age_summary |> 
+        dplyr::filter(
+          Sex != "U",
+          `BC Age` < 13,
+          !(Sex == "M" && `BC Age` > 7)
+        ) |> 
+        dplyr::mutate(
+          `BC Age` = factor(`BC Age`)
+        ) |> 
+        tidyr::complete(
+          `BC Age`
+        ) |> 
+        dplyr::mutate(
+          `BC Age` = as.numeric(`BC Age`),
+          Sex = dplyr::if_else(
+            Sex == "M",
+            "Male",
+            "Female"
+          )
+        ) |> 
+        dplyr::mutate_at(
+          3:6, ~tidyr::replace_na(., 0)
+        ),
+      ggplot2::aes(
+        ymin = `Mean BC Length` - `SD BC Length`,
+        ymax = `Mean BC Length` + `SD BC Length`
+      ),
+      width = 0.25,
+      position = ggplot2::position_dodge(0.9)
+    ) +
+    # ggplot2::geom_text(
+    #   data = BC_length_at_age_summary |> 
+    #     dplyr::filter(
+    #       Sex != "U"
+    #     ) |> 
+    #     dplyr::mutate(
+    #       `BC Age` = factor(`BC Age`)
+    #     ) |> 
+    #     tidyr::complete(
+    #       `BC Age`
+    #     ) |> 
+    #     dplyr::mutate(
+    #       `BC Age` = as.numeric(`BC Age`),
+    #       Sex = dplyr::if_else(
+    #         Sex == "M",
+    #         "Male",
+    #         "Female"
+    #       )
+    #     ),
+    #   ggplot2::aes(
+    #     x = `BC Age`,
+    #     y = 685,
+    #     label = Observations,
+    #     color = Sex
+    #   ),
+    #   position = ggplot2::position_dodge(0.9),
+    #   size = 3
+    # ) +
+    ggplot2::scale_y_continuous(
+      "Back-calculated length",
+      breaks = seq(0, 700, 100),
+      limits = c(0, 700),
+      expand = ggplot2::expansion(
+        mult = c(0, 0)
+      )
+    ) +
+    ggplot2::scale_x_continuous(
+      "Back-calculated age",
+      breaks = seq(0, max(BC_length_at_age_summary$`BC Age`)[1], by = 1),
+      expand = ggplot2::expansion(
+        mult = c(0.005, 0.005)
+      )
+    ) +
+    ggplot2::scale_fill_manual(
+      "",
+      values = c(
+        "Male" = "gray60",
+        "Female" = "gray30"
+      )
+    ) +
+    ggplot2::scale_color_manual(
+      "",
+      values = c(
+        "Male" = "gray60",
+        "Female" = "gray30"
+      )
+    ) +
+    ggplot2::theme_classic()
 ```
 
 
